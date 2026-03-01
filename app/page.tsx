@@ -24,6 +24,7 @@ import { supabase } from "@/lib/supabase";
 
 export default function Home() {
     const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
+    const [isDemoMode, setIsDemoMode] = useState(false);
     const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
     const [authEmail, setAuthEmail] = useState('');
     const [authPassword, setAuthPassword] = useState('');
@@ -52,29 +53,45 @@ export default function Home() {
         setActiveTab('dashboard');
     };
 
-    // Fetch initial data from Supabase and handle Auth state
     useEffect(() => {
         const checkAuth = async () => {
             const { data: { session } } = await supabase.auth.getSession();
-            setIsAuthenticated(!!session);
+            if (session) {
+                setIsAuthenticated(true);
+            } else {
+                setIsAuthenticated(false);
+            }
         };
         checkAuth();
 
         const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
             setIsAuthenticated(!!session);
+            if (session) setIsDemoMode(false);
         });
 
+        return () => subscription.unsubscribe();
+    }, []);
+
+    // Fetch data when authenticated (real or demo)
+    useEffect(() => {
         const fetchData = async () => {
-            if (!isAuthenticated) return;
+            if (!isAuthenticated && !isDemoMode) return;
             setIsLoading(true);
 
             try {
+                // ... same fetch logic
                 const { data, error } = await supabase
                     .from('ingredients')
                     .select('*')
                     .order('created_at', { ascending: false });
 
-                if (error) throw error;
+                if (error) {
+                    // In demo mode, we might get RLS errors if not logged in.
+                    // We can either ignore them or show mock data.
+                    // For now, let's just not crash.
+                    console.log('Database fetch ignored or failed (Demo mode?):', error.message);
+                }
+
                 if (data) {
                     const mappedData: Ingredient[] = data.map(item => ({
                         id: item.id,
@@ -100,9 +117,10 @@ export default function Home() {
             }
         };
 
-        fetchData();
-        return () => subscription.unsubscribe();
-    }, [isAuthenticated]);
+        if (isAuthenticated || isDemoMode) {
+            fetchData();
+        }
+    }, [isAuthenticated, isDemoMode]);
 
     const handleIngredientsChange = (newIngs: Ingredient[]) => {
         setIngredients(newIngs);
@@ -133,20 +151,22 @@ export default function Home() {
     };
 
     const handleDemoBypass = () => {
-        // Option to just force true if they really want an instant demo without auth limits
-        setIsAuthenticated(true);
+        setIsDemoMode(true);
     };
 
     const handleLogout = async () => {
         await supabase.auth.signOut();
         setIsAuthenticated(false);
+        setIsDemoMode(false);
     };
+
+    const isUserLoggedIn = isAuthenticated || isDemoMode;
 
     if (isAuthenticated === null) {
         return <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950" />; // Empty state while checking session
     }
 
-    if (!isAuthenticated) {
+    if (!isUserLoggedIn) {
         return (
             <div className="flex min-h-screen bg-zinc-50 dark:bg-zinc-950 items-center justify-center p-4">
                 <div className="w-full max-w-sm rounded-2xl border bg-white dark:bg-zinc-900 text-zinc-950 dark:text-zinc-50 shadow-xl overflow-hidden animate-in fade-in zoom-in-95 duration-500">

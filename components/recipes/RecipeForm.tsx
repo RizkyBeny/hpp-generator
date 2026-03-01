@@ -207,7 +207,7 @@ export default function RecipeForm({ availableIngredients }: RecipeFormProps) {
                         className="inline-flex h-9 items-center justify-center rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white shadow hover:opacity-90 dark:bg-zinc-50 dark:text-zinc-900 transition-opacity disabled:opacity-50"
                     >
                         <LucideSave className="h-4 w-4 mr-2" />
-                        {isSubmitting ? 'Saving...' : 'Save Recipe'}
+                        {isSubmitting ? 'Menyimpan...' : 'Simpan Resep'}
                     </button>
                     <button
                         onClick={() => handleExport('png')}
@@ -469,9 +469,16 @@ export default function RecipeForm({ availableIngredients }: RecipeFormProps) {
                                     <button
                                         onClick={handleSaveRecipe}
                                         disabled={isSubmitting}
-                                        className="w-full h-10 rounded-md bg-zinc-900 dark:bg-zinc-50 text-white dark:text-zinc-900 text-sm font-medium shadow hover:opacity-90 transition-opacity flex items-center justify-center gap-2"
+                                        className="w-full h-10 rounded-md bg-zinc-900 border border-zinc-900 dark:bg-zinc-50 dark:border-zinc-50 text-white dark:text-zinc-900 text-sm font-medium shadow hover:opacity-90 transition-opacity flex items-center justify-center gap-2"
                                     >
-                                        <LucideSave className="h-4 w-4" /> Save Result
+                                        <LucideSave className="h-4 w-4" /> Simpan Resep
+                                    </button>
+                                    <button
+                                        onClick={() => handleExport('png')}
+                                        disabled={isExporting}
+                                        className="w-full h-10 rounded-md border border-input bg-background px-4 py-2 text-sm font-medium shadow-sm hover:bg-accent hover:text-accent-foreground transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                                    >
+                                        <LucideDownload className="h-4 w-4" /> Download Laporan
                                     </button>
                                 </div>
                             </div>

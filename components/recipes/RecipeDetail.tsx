@@ -16,8 +16,12 @@ import {
     LucideTrash2,
     LucideX,
     LucideChefHat,
-    LucidePlus
+    LucidePlus,
+    LucideDownload
 } from 'lucide-react';
+import * as htmlToImage from 'html-to-image';
+import { jsPDF } from 'jspdf';
+import ExportTemplate from './ExportTemplate';
 
 interface RecipeIngredientDetail {
     id?: string;
@@ -78,6 +82,8 @@ export default function RecipeDetail({ recipeId, onBack, availableIngredients }:
     });
     const [editIngredients, setEditIngredients] = useState<EditIngredientRow[]>([]);
     const [editOverheads, setEditOverheads] = useState<RecipeOverheadDetail[]>([]);
+    const [isExporting, setIsExporting] = useState(false);
+    const exportRef = React.useRef<HTMLDivElement>(null);
 
     const fetchRecipe = async () => {
         setIsLoading(true);
@@ -304,6 +310,36 @@ export default function RecipeDetail({ recipeId, onBack, availableIngredients }:
         }
     };
 
+    const handleExport = async (format: 'png' | 'pdf') => {
+        if (!exportRef.current || !recipe) return;
+        setIsExporting(true);
+
+        try {
+            const dataUrl = await htmlToImage.toPng(exportRef.current, {
+                quality: 0.95,
+                backgroundColor: '#ffffff',
+                pixelRatio: 2
+            });
+
+            if (format === 'png') {
+                const link = document.createElement('a');
+                link.download = `HPP-${recipe.name}-${new Date().getTime()}.png`;
+                link.href = dataUrl;
+                link.click();
+            } else {
+                const pdf = new jsPDF('p', 'mm', 'a4');
+                const imgWidth = 210;
+                pdf.addImage(dataUrl, 'PNG', 0, 0, imgWidth, 0);
+                pdf.save(`HPP-${recipe.name}-${new Date().getTime()}.pdf`);
+            }
+        } catch (error) {
+            console.error('Export failed:', error);
+            alert('Gagal mengunduh laporan.');
+        } finally {
+            setIsExporting(false);
+        }
+    };
+
     const handleDelete = async () => {
         if (!recipe) return;
         if (!confirm('Hapus resep ini secara permanen?')) return;
@@ -401,6 +437,14 @@ export default function RecipeDetail({ recipeId, onBack, availableIngredients }:
                             >
                                 <LucideTrash2 className="h-4 w-4 mr-2" />
                                 Hapus
+                            </button>
+                            <button
+                                onClick={() => handleExport('png')}
+                                disabled={isExporting}
+                                className="inline-flex h-9 items-center justify-center rounded-md border border-input bg-background px-4 py-2 text-sm font-medium shadow-sm hover:bg-accent hover:text-accent-foreground transition-colors disabled:opacity-50"
+                            >
+                                <LucideDownload className="h-4 w-4 mr-2" />
+                                {isExporting ? 'Exporting...' : 'Export'}
                             </button>
                         </>
                     )}
@@ -779,6 +823,27 @@ export default function RecipeDetail({ recipeId, onBack, availableIngredients }:
                                     <span className="text-muted-foreground">Estimasi Profit / Unit</span>
                                     <span className="font-bold text-green-600">+ Rp {displayProfit.toLocaleString('id-ID')}</span>
                                 </div>
+
+                                <div className="flex flex-col gap-2 pt-2">
+                                    {isEditing && (
+                                        <button
+                                            onClick={handleSaveEdit}
+                                            disabled={isSaving}
+                                            className="w-full h-10 rounded-md bg-zinc-900 border border-zinc-900 dark:bg-zinc-50 dark:border-zinc-50 text-white dark:text-zinc-900 text-sm font-medium shadow hover:opacity-90 transition-opacity flex items-center justify-center gap-2"
+                                        >
+                                            <LucideSave className="h-4 w-4" />
+                                            {isSaving ? 'Menyimpan...' : 'Simpan Perubahan'}
+                                        </button>
+                                    )}
+                                    <button
+                                        onClick={() => handleExport('png')}
+                                        disabled={isExporting}
+                                        className="w-full h-10 rounded-md border border-input bg-background px-4 py-2 text-sm font-medium shadow-sm hover:bg-accent hover:text-accent-foreground transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                                    >
+                                        <LucideDownload className="h-4 w-4" />
+                                        {isExporting ? 'Exporting...' : 'Download Laporan'}
+                                    </button>
+                                </div>
                             </div>
                         </div>
 
@@ -788,6 +853,36 @@ export default function RecipeDetail({ recipeId, onBack, availableIngredients }:
                             </p>
                         </div>
                     </div>
+                </div>
+            </div>
+
+            {/* Hidden Export Template */}
+            <div className="fixed -left-[9999px] top-0 overflow-hidden pointer-events-none">
+                <div ref={exportRef}>
+                    <ExportTemplate
+                        recipeName={isEditing ? editForm.name : recipe?.name || ''}
+                        category={isEditing ? editForm.category : recipe?.category || 'Makanan'}
+                        portions={isEditing ? editForm.portions : recipe?.portions || 1}
+                        ingredients={isEditing
+                            ? editIngredients.map(ei => ({ ingredientId: ei.ingredientId, quantity: ei.quantity, unit: ei.unit }))
+                            : (recipe?.recipe_ingredients || []).map(ri => ({
+                                ingredientId: ri.ingredient_id,
+                                quantity: ri.quantity,
+                                unit: ri.unit as any
+                            }))}
+                        availableIngredients={availableIngredients}
+                        overheads={isEditing
+                            ? editOverheads.map(eo => ({ name: eo.name, cost: eo.cost, category: eo.category }))
+                            : (recipe?.recipe_overheads || []).map(oh => ({
+                                name: oh.name,
+                                cost: oh.cost,
+                                category: oh.category
+                            }))}
+                        margin={displayMargin}
+                        totalHPP={displayTotalHpp}
+                        hppPerPortion={displayHppPerUnit}
+                        sellingPrice={displaySellingPrice}
+                    />
                 </div>
             </div>
         </div>
