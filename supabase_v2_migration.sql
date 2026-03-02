@@ -125,6 +125,9 @@ END;
 $$;
 
 -- 7. RPC: process_sale
+DROP FUNCTION IF EXISTS public.process_sale(uuid, varchar, varchar, varchar, varchar, numeric, text, date, time, jsonb);
+DROP FUNCTION IF EXISTS public.process_sale(uuid, text, text, text, text, numeric, text, date, time, jsonb);
+
 CREATE OR REPLACE FUNCTION process_sale(
   p_user_id        UUID,
   p_sale_channel   TEXT,
