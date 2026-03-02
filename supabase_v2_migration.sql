@@ -26,7 +26,8 @@ CREATE TABLE IF NOT EXISTS transactions (
   customer_contact VARCHAR(100),
   subtotal        DECIMAL(12,2) NOT NULL,
   discount        DECIMAL(12,2) NOT NULL DEFAULT 0,
-  total           DECIMAL(12,2) NOT NULL,
+  total_amount    DECIMAL(12,2) NOT NULL, -- Renamed from total
+  total_hpp       DECIMAL(12,2) NOT NULL DEFAULT 0, -- Added for rekap HPP
   notes           TEXT,
   sale_date       DATE         NOT NULL DEFAULT CURRENT_DATE,
   sale_time       TIME,
@@ -140,10 +141,10 @@ LANGUAGE plpgsql
 SECURITY DEFINER
 AS $$
 DECLARE
-  v_transaction_id   UUID := gen_random_uuid();
   v_receipt_number       TEXT;
   v_subtotal         DECIMAL := 0;
-  v_total            DECIMAL;
+  v_total_amount     DECIMAL;
+  v_total_hpp        DECIMAL := 0;
   v_item             JSONB;
   v_ri               RECORD;
   v_ingredient       RECORD;
@@ -165,16 +166,16 @@ BEGIN
   INTO v_subtotal
   FROM jsonb_array_elements(p_items) AS item;
 
-  v_total := v_subtotal - COALESCE(p_discount, 0);
+  v_total_amount := v_subtotal - COALESCE(p_discount, 0);
 
   -- Insert header
   INSERT INTO transactions (
     id, user_id, receipt_number, sale_channel, payment_method,
-    customer_name, customer_contact, subtotal, discount, total,
+    customer_name, customer_contact, subtotal, discount, total_amount,
     notes, sale_date, sale_time
   ) VALUES (
     v_transaction_id, p_user_id, v_receipt_number, p_sale_channel, p_payment_method,
-    p_customer_name, p_customer_contact, v_subtotal, COALESCE(p_discount, 0), v_total,
+    p_customer_name, p_customer_contact, v_subtotal, COALESCE(p_discount, 0), v_total_amount,
     p_notes, p_sale_date, p_sale_time
   );
 
@@ -193,6 +194,9 @@ BEGIN
       (v_item->>'hpp_at_sale')::DECIMAL,
       (v_item->>'unit_price')::DECIMAL * (v_item->>'quantity')::INT
     );
+
+    -- Accumulate total HPP
+    v_total_hpp := v_total_hpp + (COALESCE((v_item->>'hpp_at_sale')::DECIMAL, 0) * (v_item->>'quantity')::INT);
 
     -- Deduct stock
     FOR v_ri IN
@@ -259,10 +263,14 @@ BEGIN
     END LOOP;
   END LOOP;
 
+  -- Update total_hpp in header
+  UPDATE transactions SET total_hpp = v_total_hpp WHERE id = v_transaction_id;
+
   RETURN jsonb_build_object(
     'transaction_id', v_transaction_id,
     'receipt_number', v_receipt_number,
-    'total', v_total,
+    'total_amount', v_total_amount,
+    'total_hpp', v_total_hpp,
     'stock_warnings', v_warnings,
     'skipped_deductions', v_skipped
   );
@@ -271,9 +279,9 @@ $$;
 
 -- 8. RPC: void_transaction
 CREATE OR REPLACE FUNCTION void_transaction(
-  p_user_id        UUID,
   p_transaction_id UUID,
-  p_reason         TEXT
+  p_void_reason    TEXT,
+  p_user_id        UUID DEFAULT auth.uid()
 ) RETURNS JSONB
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -294,7 +302,7 @@ BEGIN
   END IF;
 
   UPDATE transactions
-  SET status = 'voided', voided_at = NOW(), voided_reason = p_reason
+  SET status = 'voided', voided_at = NOW(), voided_reason = p_void_reason
   WHERE id = p_transaction_id;
 
   FOR v_movement IN
@@ -315,7 +323,7 @@ BEGIN
       v_movement.quantity_after,
       v_movement.quantity_after + ABS(v_movement.quantity_change),
       v_movement.unit, p_transaction_id, 'transaction',
-      'Stock reversal for void: ' || p_reason
+      'Stock reversal for void: ' || p_void_reason
     );
   END LOOP;
 
@@ -386,9 +394,16 @@ ALTER TABLE transaction_items ENABLE ROW LEVEL SECURITY;
 ALTER TABLE stock_movements ENABLE ROW LEVEL SECURITY;
 ALTER TABLE restock_logs ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "transactions_user_policy" ON transactions;
 CREATE POLICY "transactions_user_policy" ON transactions FOR ALL USING (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "transaction_items_user_policy" ON transaction_items;
 CREATE POLICY "transaction_items_user_policy" ON transaction_items FOR ALL USING (
   EXISTS (SELECT 1 FROM transactions t WHERE t.id = transaction_id AND t.user_id = auth.uid())
 );
+
+DROP POLICY IF EXISTS "stock_movements_user_policy" ON stock_movements;
 CREATE POLICY "stock_movements_user_policy" ON stock_movements FOR ALL USING (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "restock_logs_user_policy" ON restock_logs;
 CREATE POLICY "restock_logs_user_policy" ON restock_logs FOR ALL USING (auth.uid() = user_id);
